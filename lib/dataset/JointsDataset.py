@@ -126,9 +126,8 @@ class JointsDataset(Dataset):
             )
         else:
             data_numpy = cv2.imread(
-                image_file, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION
+                image_file, cv2.IMREAD_COLOR
             )
-
         if self.color_rgb:
             data_numpy = cv2.cvtColor(data_numpy, cv2.COLOR_BGR2RGB)
 
@@ -143,7 +142,6 @@ class JointsDataset(Dataset):
         s = db_rec['scale']
         score = db_rec['score'] if 'score' in db_rec else 1
         r = 0
-
         if self.is_train:
             # if (np.sum(joints_vis[:, 0]) > self.num_joints_half_body
             #     and np.random.rand() < self.prob_half_body):
@@ -167,12 +165,12 @@ class JointsDataset(Dataset):
                 c[0] = data_numpy.shape[1] - c[0] - 1
 
         trans = get_affine_transform(c, s, r, self.image_size)
+
         input = cv2.warpAffine(
             data_numpy,
             trans,
             (int(self.image_size[0]), int(self.image_size[1])),
             flags=cv2.INTER_LINEAR)
-
         if self.transform:
             input = self.transform(input)
 

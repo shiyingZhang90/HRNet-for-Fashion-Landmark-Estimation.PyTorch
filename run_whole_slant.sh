@@ -1,0 +1,1 @@
+sh whole.sh ./data/deepfashion2/test/image/data_logo_blue/logo_whole ./data/deepfashion2/test/image/data_logo_blue/model_1 ./data/deepfashion2/test/image/data_logo_blue/mask_test ./template2/p1/Lark20210505-144716.png -20 0 1e-3 0.8

@@ -62,9 +62,7 @@ def get_affine_transform(
         shift=np.array([0, 0], dtype=np.float32), inv=0
 ):
     if not isinstance(scale, np.ndarray) and not isinstance(scale, list):
-        print(scale)
         scale = np.array([scale, scale])
-
     scale_tmp = scale * 200.0
     src_w = scale_tmp[0]
     dst_w = output_size[0]
@@ -83,6 +81,7 @@ def get_affine_transform(
 
     src[2:, :] = get_3rd_point(src[0, :], src[1, :])
     dst[2:, :] = get_3rd_point(dst[0, :], dst[1, :])
+
 
     if inv:
         trans = cv2.getAffineTransform(np.float32(dst), np.float32(src))

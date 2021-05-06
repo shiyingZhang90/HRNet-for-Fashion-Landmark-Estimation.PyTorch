@@ -62,28 +62,29 @@ class DeepFashion2Dataset(JointsDataset):
         self.select_cat = cfg.DATASET.SELECT_CAT
         self.aspect_ratio = self.image_width * 1.0 / self.image_height
         self.pixel_std = 200
-
-        self.coco = COCO(self._get_ann_file_keypoint())
+        self.use_deepfashion1 = cfg.DATASET.USE_DEEPFASHION1
+        self.coco = COCO(self._get_ann_file_keypoint()) if not self.use_deepfashion1 else None
 
         # deal with class names
-        cats = [cat['name']
-                for cat in self.coco.loadCats(self.coco.getCatIds())]
-        self.classes = ['__background__'] + cats
-        logger.info('=> classes: {}'.format(self.classes))
-        self.num_classes = len(self.classes)
-        self._class_to_ind = dict(zip(self.classes, range(self.num_classes)))
-        self._class_to_coco_ind = dict(zip(cats, self.coco.getCatIds()))
-        self._coco_ind_to_class_ind = dict(
-            [
-                (self._class_to_coco_ind[cls], self._class_to_ind[cls])
-                for cls in self.classes[1:]
-            ]
-        )
+        if not self.use_deepfashion1:
+            cats = [cat['name']
+                    for cat in self.coco.loadCats(self.coco.getCatIds())]
+            self.classes = ['__background__'] + cats
+            logger.info('=> classes: {}'.format(self.classes))
+            self.num_classes = len(self.classes)
+            self._class_to_ind = dict(zip(self.classes, range(self.num_classes)))
+            self._class_to_coco_ind = dict(zip(cats, self.coco.getCatIds()))
+            self._coco_ind_to_class_ind = dict(
+                [
+                    (self._class_to_coco_ind[cls], self._class_to_ind[cls])
+                    for cls in self.classes[1:]
+                ]
+            )
 
-        # load image file names
-        self.image_set_index = self._load_image_set_index()
-        self.num_images = len(self.image_set_index)
-        logger.info('=> num_images: {}'.format(self.num_images))
+            # load image file names
+            self.image_set_index = self._load_image_set_index()
+            self.num_images = len(self.image_set_index)
+            logger.info('=> num_images: {}'.format(self.num_images))
 
         self.num_joints = 294
         self.gt_class_keypoints_dict = {1: (0, 25), 2: (25, 58), 3: (58, 89),
@@ -123,8 +124,9 @@ class DeepFashion2Dataset(JointsDataset):
 
         print('Generating samples...')
         tic = time.time()
-        self.cls_stat = np.array([0 for i in range(self.num_classes)])
-        self.sample_list_of_cls = []
+        if not self.use_deepfashion1:
+            self.cls_stat = np.array([0 for i in range(self.num_classes)])
+            self.sample_list_of_cls = []
         self.db = self._get_db()
         print('Done (t={:0.2f}s)'.format(time.time()- tic))
 
@@ -158,7 +160,9 @@ class DeepFashion2Dataset(JointsDataset):
         return image_ids
 
     def _get_db(self):
-        if self.is_train or self.use_gt_bbox:
+        if self.use_deepfashion1:
+            gt_db = self._load_deepfashion1_detection_results()
+        elif self.is_train or self.use_gt_bbox:
             # use ground truth bbox
             gt_db = self._load_coco_keypoint_annotations()
         else:
@@ -264,12 +268,7 @@ class DeepFashion2Dataset(JointsDataset):
         return center, scale
 
     def image_path_from_index(self, index):
-        file_name = '%06d.jpg' % index
-        file_name = os.path.join('image', file_name)
-
-        image_path = os.path.join(self.root, self.image_set, file_name)
-
-        return image_path
+        return index
 
     def _load_deepfashion2_detection_results(self):
         all_boxes = None
@@ -311,6 +310,95 @@ class DeepFashion2Dataset(JointsDataset):
                     'score': score,
                     'joints_3d': joints_3d,
                     'joints_3d_vis': joints_3d_vis,
+                })
+        elif bbox_file_type == 'pkl':
+            logger.info("Loading detection results from %s ..." % self.bbox_file)
+            import pickle
+            with open(self.bbox_file, 'rb') as f:
+                raw_data = pickle.load(f)
+                # all_boxes = self._process_pickle(raw_data)
+                all_boxes = self._process_pickle(raw_data)
+            if not all_boxes:
+                logger.error('=> Load %s fail!' % self.bbox_file)
+                return None
+
+            logger.info('=> Total boxes: {}'.format(len(all_boxes)))
+
+            kpt_db = []
+            num_boxes = 0
+            for n_img in range(0, len(all_boxes)):
+                det_res = all_boxes[n_img]
+                # if det_res['category_id'] != 1:
+                #     continue
+                img_name = self.image_path_from_index(det_res['image_id'])
+                box = det_res['bbox']
+                score = det_res['score']
+                category_id = det_res['category_id']
+
+                if score < self.image_thre:
+                    continue
+
+                num_boxes = num_boxes + 1
+
+                center, scale = self._box2cs(box)
+                joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
+                joints_3d_vis = np.ones(
+                    (self.num_joints, 3), dtype=np.float)
+                kpt_db.append({
+                    'image': img_name,
+                    'center': center,
+                    'scale': scale,
+                    'score': score,
+                    'joints_3d': joints_3d,
+                    'joints_3d_vis': joints_3d_vis,
+                    'category_id': det_res['category_id']
+                })
+
+        logger.info('=> Total boxes after fliter low score@{}: {}'.format(
+            self.image_thre, num_boxes))
+        return kpt_db
+    
+    def _load_deepfashion1_detection_results(self):
+        all_boxes = None
+        bbox_file_type = self.bbox_file.split('.')[-1]
+
+        if bbox_file_type == 'json':
+            with open(self.bbox_file, 'r') as f:
+                all_boxes = json.load(f)
+
+            if not all_boxes:
+                logger.error('=> Load %s fail!' % self.bbox_file)
+                return None
+
+            logger.info('=> Total boxes: {}'.format(len(all_boxes)))
+
+            kpt_db = []
+            num_boxes = 0
+            for n_img in range(0, len(all_boxes)):
+                det_res = all_boxes[n_img]
+                # if det_res['category_id'] != 1:
+                #     continue
+                img_name = det_res['image_id']
+                box = det_res['bbox']
+                score = det_res['score']
+
+                if score < self.image_thre:
+                    continue
+
+                num_boxes = num_boxes + 1
+
+                center, scale = self._box2cs(box)
+                joints_3d = np.zeros((self.num_joints, 3), dtype=np.float)
+                joints_3d_vis = np.ones(
+                    (self.num_joints, 3), dtype=np.float)
+                kpt_db.append({
+                    'image': img_name,
+                    'center': center,
+                    'scale': scale,
+                    'score': score,
+                    'joints_3d': joints_3d,
+                    'joints_3d_vis': joints_3d_vis,
+                    'category_id': det_res['category_id']
                 })
         elif bbox_file_type == 'pkl':
             logger.info("Loading detection results from %s ..." % self.bbox_file)
@@ -405,7 +493,7 @@ class DeepFashion2Dataset(JointsDataset):
                 'area': all_boxes[idx][4],
                 'score': all_boxes[idx][5],
                 'category_id': all_boxes[idx][6],
-                'image': int(img_path[idx][-10:-4])
+                'image': img_path[idx]
             })
         # image x person x (keypoints)
         kpts = defaultdict(list)

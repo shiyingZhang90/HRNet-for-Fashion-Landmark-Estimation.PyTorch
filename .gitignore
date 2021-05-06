@@ -1,6 +1,7 @@
 # IntelliJ project files
 .idea
 *.iml
+*.zip
 out
 gen
 
@@ -27,7 +28,20 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+hoddie/
+bbox_output/
+data/
+models/
+output/
+results_expanded/
+cloth_prob/
+figures/
+log/
+segmentation/
+template*/
+test/
 env/
+Self-Correction-Human-Parsing/*.pth
 build/
 develop-eggs/
 dist/

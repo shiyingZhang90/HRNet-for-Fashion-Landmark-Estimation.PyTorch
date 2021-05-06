@@ -144,14 +144,19 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             score = meta['score'].numpy()
 
             channel_mask = torch.zeros_like(target_weight).float()
+            # print(channel_mask.shape)
+            # print(type(channel_mask))
             for j, cat_id in enumerate(cat_ids):
                 rg = val_dataset.gt_class_keypoints_dict[int(cat_id)]
                 index = torch.tensor([list(range(rg[0], rg[1]))], device=channel_mask.device, dtype=channel_mask.dtype).transpose(1,0).long()
                 channel_mask[j].scatter_(0, index, 1)
                 
             # compute output
+            # print(input[:, :, 100:110, 100:110])
+            interval = val_dataset.gt_class_keypoints_dict[1]
             output = model(input)
-
+            # print('output_shape: ', output.shape)
+            # print(output[0, interval[0]:interval[1], :, :])
             if config.MODEL.TARGET_TYPE == 'gaussian':
                 if config.TEST.FLIP_TEST:
                     # this part is ugly, because pytorch has not supported negative index
@@ -179,10 +184,13 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                             output_flipped.clone()[:, :, :, 0:-1]
 
                     output = (output + output_flipped) * 0.5
-
+                    # print('aaaaaaa', output[0, interval[0]:interval[1], :, :])
                 # block irrelevant channels in output
+                interval = val_dataset.gt_class_keypoints_dict[1]
+                # print(output[0, interval[0]:interval[1], :, :])
                 output = output * channel_mask.unsqueeze(3)
                 preds, maxvals = get_final_preds(config, output.detach().cpu().numpy(), c, s)
+
                 
             elif config.MODEL.TARGET_TYPE == 'coordinate':
                 heatmap, output = output
@@ -205,7 +213,6 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
 
                     output = (output + output_flipped) * 0.5
                 preds, maxvals = get_final_preds(config, output.detach().cpu().numpy(), c, s, heatmap.detach().cpu().numpy())
-
                 # block irrelevant channels in output
                 output = output * channel_mask
             else:
@@ -225,7 +232,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             # measure elapsed time
             batch_time.update(time.time() - end)
             end = time.time()
-
+            rg = val_dataset.gt_class_keypoints_dict[1]
             all_preds[idx:idx + num_images, :, 0:2] = preds[:, :, 0:2]
             all_preds[idx:idx + num_images, :, 2:3] = maxvals
 

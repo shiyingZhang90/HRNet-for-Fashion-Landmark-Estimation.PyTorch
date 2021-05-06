@@ -72,7 +72,7 @@ def main():
 
     logger, final_output_dir, tb_log_dir = create_logger(
         cfg, args.cfg, 'valid')
-
+    print(final_output_dir)
     logger.info(pprint.pformat(args))
     logger.info(cfg)
 
@@ -121,15 +121,15 @@ def main():
             normalize,
         ])
     )
+    print(len(valid_dataset))
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
         # batch_size=cfg.TEST.BATCH_SIZE_PER_GPU*len(cfg.GPUS),
         batch_size=batch_size,
         shuffle=False,
-        num_workers=cfg.WORKERS,
+        num_workers=0,
         pin_memory=True
     )
-
     logger.info('=> Start testing...')
     
     # evaluate on validation set
